@@ -15,6 +15,9 @@ class Game:
         else:
             self.playerInfo[player] = playerStats(player, chips)
 
+    def leavesGame(self, player, chips):
+        self.playerInfo[player].leaveGame(chips)
+
     def startNewHand(self, dealer, num):
         self.endHand()
         self.currentHand = Hand(dealer, num)
@@ -52,6 +55,9 @@ class playerStats:
         self.outAmounts.append(chips)
         self.chips = 0
 
+    def __str__(self) -> str:
+        return f'Player: {self.player}, chips: {self.chips}, numBuys: {self.numBuys}, buyAmounts: {self.buyAmounts}, outAmounts: {self.outAmounts}'
+
 class Hand:
     def __init__(self, dealer, handNumber):
         self.dealer = dealer
@@ -66,8 +72,15 @@ class Hand:
         self.flop = None
         self.turn = None
         self.river = None
+        self.secondFlop = None
+        self.secondTurn = None
+        self.secondRiver = None
 
         self.holeCards = {}
+        self.winners = []
+        self.winningAmounts = []
+        self.winningCombination = []
+        self.winningType = []
 
     def initializeStacks(self, stacks):
         self.stacks = stacks
@@ -83,13 +96,33 @@ class Hand:
         else:
             self.riverActions.append(currentAction)
     
-    def dealBoard(self, cards):
-        if self.flop is None:
-            self.flop = cards
-        elif self.turn is None:
-            self.turn = cards
+    def dealBoard(self, cards, type, second=False):
+        if not second:
+            if type == 'flop':
+                self.flop = cards
+            elif type == 'turn':
+                self.turn = cards
+            elif type == 'river':
+                self.river = cards
+            else:
+                raise TypeError(f'Unrecognized board deal type {type}')
         else:
-            self.river = cards
+            if type == 'flop':
+                self.secondFlop = cards
+            elif type == 'turn':
+                self.secondTurn = cards
+            elif type == 'river':
+                self.secondRiver = cards
+            else:
+                raise TypeError(f'Unrecognized board deal type {type}')
+
+    def addWinner(self, player, amount, type=None, combination=None):
+        self.winners.append(player)
+        self.winningAmounts.append(amount)
+        if type is not None:
+            self.winningType.append(type)
+        if combination is not None:
+            self.winningCombination.append(combination)
 
 
 class Action:
@@ -109,9 +142,15 @@ def parseLog(filename, user):
         time = row.at
         if desc.startswith("The admin approved the player "):
             # The admin approved the player "user @asdf" participation with a stack of x.
-            player = desc.split('"')[1]
-            chips = int(desc.split()[-1][:-1])
+            matches = re.search(r'"(.*)" participation with a stack of (\d+).', desc)
+            player = matches.group(1)
+            chips = int(matches.group(2))
             game.addApprovedPlayer(player, chips)
+        elif "quits" in desc:
+            matches = re.search(r'"(.*)" quits the game with a stack of (\d+).', desc)
+            player = matches.group(1)
+            chips = int(matches.group(2))
+            game.leavesGame(player, chips)
         elif desc.startswith("-- starting hand "):
             if 'dead button' in desc:
                 dealer = None
@@ -183,16 +222,19 @@ def parseLog(filename, user):
             amount = re.search(r'bets (\d+)', desc).group(1)
             game.currentHand.addAction(player, "raise", int(amount))
 
-        elif desc.startswith("Flop: "):
+        elif desc.startswith("Flop"):
             cardsString = re.search(r'\[.*\]', desc).group(0)
             cards = cardsString[1:-1].split(', ')
-            game.currentHand.dealBoard(cards)
-        elif desc.startswith("Turn: "):
+            second = "(second run)" in desc
+            game.currentHand.dealBoard(cards, 'flop', second)
+        elif desc.startswith("Turn"):
             cardsString = re.search(r'\[.*\]', desc).group(0)
-            game.currentHand.dealBoard(cardsString[1:-1])
-        elif desc.startswith("River: "):
+            second = "(second run)" in desc
+            game.currentHand.dealBoard(cardsString[1:-1], 'turn', second)
+        elif desc.startswith("River"):
             cardsString = re.search(r'\[.*\]', desc).group(0)
-            game.currentHand.dealBoard(cardsString[1:-1])
+            second = "(second run)" in desc
+            game.currentHand.dealBoard(cardsString[1:-1], 'river', second)
 
         elif "shows a" in desc:
             player = desc.split('"')[1]
@@ -203,7 +245,22 @@ def parseLog(filename, user):
             cardString = re.search(r'Your hand is (.*)', desc).group(1)
             cards = cardString.split(', ')
             game.currentHand.holeCards[user] = cards
-        
+
+        elif re.search(r'collected \d+ from pot with', desc):
+            matches = re.search(r'"(.*)" collected (\d+) from pot with (.+) \(combination: (.*)\)', desc)
+            winner = matches.group(1)
+            amount = matches.group(2)
+            winningType = matches.group(3)
+            combination = matches.group(4)
+            game.currentHand.addWinner(winner, amount, winningType, combination)
+        elif "collected" in desc:
+            matches = re.search(r'"(.*)" collected (\d+) from pot', desc)
+            winner = matches.group(1)
+            amount = matches.group(2)
+            game.currentHand.addWinner(winner, amount)
+        elif "uncalled bet" in desc:
+            pass
+
     game.endHand()
     return game
     
@@ -217,6 +274,8 @@ def main():
         print(hand.holeCards)
         for action in hand.preflopActions:
             print(action)
+    for player, info in game.playerInfo.items():
+        print(info)
 
 if __name__=="__main__":
     main()
