@@ -1,5 +1,6 @@
 import pandas as pd
 import re
+from collections import defaultdict
 
 class Game:
     def __init__(self, user):
@@ -13,7 +14,7 @@ class Game:
             info = self.playerInfo[player]
             info.newBuy(chips)
         else:
-            self.playerInfo[player] = playerStats(player, chips)
+            self.playerInfo[player] = PlayerInfo(player, chips)
 
     def leavesGame(self, player, chips):
         self.playerInfo[player].leaveGame(chips)
@@ -38,7 +39,7 @@ class Game:
         self.currentHand.addAction(player, action, amount)
         
 
-class playerStats:
+class PlayerInfo:
     def __init__(self, player, chips):
         self.player = player
         self.chips = chips
