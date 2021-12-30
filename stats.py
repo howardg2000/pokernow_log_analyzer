@@ -35,8 +35,8 @@ class Game:
             # if self.playerInfo[player]['chips'] != chips:
             #     raise ValueError("WRONG STACK SIZES")
 
-    def addAction(self, player, action, amount=0):
-        self.currentHand.addAction(player, action, amount)
+    def addAction(self, player, action, amount=0, time=None):
+        self.currentHand.addAction(player, action, amount, time)
         
 
 class PlayerInfo:
@@ -86,7 +86,7 @@ class Hand:
     def initializeStacks(self, stacks):
         self.stacks = stacks
 
-    def addAction(self, player, action, amount=0):
+    def addAction(self, player, action, amount=0, time=None):
         currentAction = Action(player, action, amount)
         if self.flop is None:
             self.preflopActions.append(currentAction)
@@ -263,20 +263,104 @@ def parseLog(filename, user):
             pass
 
     game.endHand()
+    # clean up remaining stacks and make them buyouts?
     return game
     
+def compute_stats(game):
+    playerStats = {player: PlayerStats(player) for player in game.playerInfo}
+    for hand in game.hands:
+        processedPlayers = defaultdict(int)
+        counter = 1
+        firstToAct=True
+        smallBlindPlayer = None
+        bigBlindPlayer = None
+        straddlePlayer = None
+        for action in hand.preflopActions:
+            if action.action in ['smallBlind', 'bigBlind', 'straddle', 'missingSmallBlind', 'missingBigBlind', 'check']:
+                if action.action == 'smallBlind':
+                    smallBlindPlayer = action.player
+                if action.action == 'bigBlind':
+                    bigBlindPlayer = action.player
+                if action.action == 'straddle':
+                    straddlePlayer = action.player
+                continue
+
+            if firstToAct:
+                playerStats[action.player].raiseFirstChances += 1
+            if action.player not in processedPlayers:
+                playerStats[action.player].numPlayed += 1
+            
+            if action.action == 'fold':   
+                pass
+            elif action.action in ['call', 'callAllIn']:
+                if action.player not in processedPlayers:
+                    playerStats[action.player].preflopCalls += 1
+                    playerStats[action.player].numVoluntary += 1
+                firstToAct = False
+            elif action.action in ['raise', 'raiseAllIn']:
+                if action.player not in processedPlayers:
+                    playerStats[action.player].preflopRaises += 1
+                    playerStats[action.player].numVoluntary += 1
+                else:
+                    playerStats[action.player].preflopReRaises += 1
+                if firstToAct:
+                    playerStats[action.player].raiseFirst += 1
+                    firstToAct = False
+                counter += 1
+                if counter == 3:
+                    playerStats[action.player].threeBet += 1
+                elif counter == 4:
+                    playerStats[action.player].fourBet += 1
+                elif counter == 5:
+                    playerStats[action.player].fiveBet += 1
+                elif counter >= 6:
+                    playerStats[action.player].sixAboveBet += 1
+            else:
+                print(action)
+                raise TypeError("Illegal preflop move!")
+
+            processedPlayers[action.player] += 1
+        
+        if firstToAct:
+            if straddlePlayer is not None:
+                playerStats[straddlePlayer].numPlayed += 1
+            elif bigBlindPlayer is not None:
+                playerStats[bigBlindPlayer].numPlayed += 1
+            else:
+                raise ValueError("Everyone folds, missing player!")
+
+    return playerStats
+
+
+class PlayerStats:
+    def __init__(self, player) -> None:
+        self.player = player
+        self.numPlayed = 0
+        self.numVoluntary = 0
+
+        self.raiseFirstChances = 0
+        self.raiseFirst = 0
+
+        self.preflopRaises = 0
+        self.preflopReRaises = 0
+        self.preflopCalls = 0
+        self.threeBet = 0
+        self.fourBet = 0
+        self.fiveBet = 0
+        self.sixAboveBet = 0
+
+    def __str__(self) -> str:
+        return f'{self.player} VPIP {self.numVoluntary}/{self.numPlayed}, RFI {self.raiseFirst}/{self.raiseFirstChances}, PFR {self.preflopRaises}/{self.numPlayed}, 3BET {self.threeBet}, 4BET {self.fourBet}, 5BET {self.fiveBet}, Calls: {self.preflopCalls}'
+
 
 def main():
     filename = 'cur2.csv'
     user = 'how'
     game = parseLog(filename, user)
-    for hand in game.hands:
-        print(hand.handNumber, hand.flop, hand.turn, hand.river)
-        print(hand.holeCards)
-        for action in hand.preflopActions:
-            print(action)
-    for player, info in game.playerInfo.items():
-        print(info)
+    stats = compute_stats(game)
+    for player, stat in stats.items():
+        if stat.numPlayed:
+            print(stat)
 
 if __name__=="__main__":
     main()
