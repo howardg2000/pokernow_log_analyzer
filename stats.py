@@ -267,7 +267,7 @@ def parseLog(filename, user):
     return game
     
 def compute_stats(game):
-    playerStats = {player: PlayerStats(player) for player in game.playerInfo}
+    playerStats = {player: PreflopStats(player) for player in game.playerInfo}
     for hand in game.hands:
         processedPlayers = defaultdict(int)
         counter = 1
@@ -332,7 +332,7 @@ def compute_stats(game):
     return playerStats
 
 
-class PlayerStats:
+class PreflopStats:
     def __init__(self, player) -> None:
         self.player = player
         self.numPlayed = 0
@@ -350,7 +350,7 @@ class PlayerStats:
         self.sixAboveBet = 0
 
     def __str__(self) -> str:
-        return f'{self.player} VPIP {self.numVoluntary}/{self.numPlayed}, RFI {self.raiseFirst}/{self.raiseFirstChances}, PFR {self.preflopRaises}/{self.numPlayed}, 3BET {self.threeBet}, 4BET {self.fourBet}, 5BET {self.fiveBet}, Calls: {self.preflopCalls}'
+        return f'{self.player} VPIP {self.numVoluntary}/{self.numPlayed} ({self.numVoluntary/self.numPlayed*100:.1f}%), RFI {self.raiseFirst}/{self.raiseFirstChances}, PFR {self.preflopRaises}/{self.numPlayed}, 3BET {self.threeBet}, 4BET {self.fourBet}, 5BET {self.fiveBet}, Calls: {self.preflopCalls}'
 
 
 def main():
@@ -358,6 +358,7 @@ def main():
     user = 'how'
     game = parseLog(filename, user)
     stats = compute_stats(game)
+    df = pd.DataFrame(columns=['player','VPIP','RFI','PFR','3BET','4BET','5BET','Calls'])
     for player, stat in stats.items():
         if stat.numPlayed:
             print(stat)
